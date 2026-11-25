@@ -1,0 +1,10 @@
+{$DNS_HOST} {
+    @doh path /dns-query/{$DOH_TOKEN} /doh.php/{$DOH_TOKEN} /dns/*.mobileconfig
+    handle @doh {
+        reverse_proxy dns:8053
+    }
+    handle {
+        respond 404
+    }
+    # Access logging intentionally disabled: the URL contains a private token.
+}
