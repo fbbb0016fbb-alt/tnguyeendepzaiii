@@ -9,6 +9,8 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import plistlib
+import re
 import secrets
 import struct
 import threading
@@ -20,6 +22,28 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parent
 MAX_MESSAGE = 65535
 TYPES = {"A": 1, "AAAA": 28, "HTTPS": 65}
+
+
+def profile_download_path(token):
+    key = hmac.new(token.encode("ascii"), b"ios-profile-download-v1", "sha256").hexdigest()[:32]
+    return f"/dns/{key}.mobileconfig"
+
+
+def build_download_profile(hostname, token, match_domains, template_path):
+    host = hostname.rstrip(".").lower().encode("idna").decode("ascii")
+    if "." not in host or len(host) > 253 or any(
+        not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+        for label in host.split(".")
+    ):
+        raise ValueError("Profile hostname must be a DNS hostname without scheme, port, or path")
+    profile = plistlib.loads(Path(template_path).read_bytes())
+    for payload in profile["PayloadContent"]:
+        if payload["PayloadType"] == "com.apple.dnsSettings.managed":
+            payload["DNSSettings"] = {
+                "DNSProtocol": "HTTPS", "ServerURL": f"https://{host}/dns-query/{token}",
+                "SupplementalMatchDomains": match_domains,
+            }
+    return plistlib.dumps(profile, fmt=plistlib.FMT_XML, sort_keys=False)
 
 
 def read_name(packet, start):
@@ -150,8 +174,16 @@ class Gateway(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, resolver, token):
+    def __init__(self, address, resolver, token, profile_host=None):
         self.resolver, self.token = resolver, token
+        self.profile_path = profile_download_path(token)
+        if profile_host is None:
+            profile_host = (os.environ.get("PROFILE_HOST") or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+                            or resolver.config.get("profile_host"))
+        self.profile_body = None
+        if profile_host:
+            self.profile_body = build_download_profile(
+                profile_host, token, resolver.config["match_domains"], ROOT / "profile-template.plist")
         self.slots = threading.BoundedSemaphore(24)
         super().__init__(address, Handler)
 
@@ -186,14 +218,18 @@ class Handler(BaseHTTPRequestHandler):
         # Request paths contain access tokens. Never put them in access logs.
         pass
 
-    def reply(self, status, body=b"", content_type="text/plain; charset=utf-8"):
+    def reply(self, status, body=b"", content_type="text/plain; charset=utf-8", filename=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def permitted(self):
         path = urllib.parse.urlsplit(self.path).path
@@ -201,6 +237,16 @@ class Handler(BaseHTTPRequestHandler):
         return any(hmac.compare_digest(path.encode(), item.encode()) for item in candidates)
 
     def do_GET(self):
+        path = urllib.parse.urlsplit(self.path).path
+        if path.startswith("/dns/"):
+            if not hmac.compare_digest(path.encode(), self.server.profile_path.encode()):
+                self.reply(404)
+            elif self.server.profile_body is None:
+                self.reply(503, b"Set PROFILE_HOST to enable iPhone profile downloads.")
+            else:
+                self.reply(200, self.server.profile_body, "application/x-apple-aspen-config",
+                           "dns-by-tnguyeendepzaii.mobileconfig")
+            return
         if self.path == "/health":
             self.reply(200, b'{"status":"ok"}', "application/json")
             return
@@ -218,6 +264,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(400)
             return
         self.answer(body)
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_POST(self):
         if not self.permitted():

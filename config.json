@@ -1,6 +1,7 @@
 {
   "listen": "127.0.0.1",
   "port": 8053,
+  "profile_host": "tnguyeendepzaiii-production.up.railway.app",
   "upstreams": [
     "https://cloudflare-dns.com/dns-query",
     "https://dns.google/dns-query"

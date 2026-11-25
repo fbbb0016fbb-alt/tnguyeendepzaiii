@@ -1,7 +1,7 @@
 {
-  "checked_at_utc": "2026-11-25T12:47:17.411158+00:00",
+  "checked_at_utc": "2026-11-25T14:04:35.612997+00:00",
   "unit_and_integration_tests": {
-    "passed": 17,
+    "passed": 23,
     "failed": 0
   },
   "observed_domains": 68,
@@ -24,5 +24,6 @@
   "docker_limitation": "Docker is not installed on this Windows machine. HTTPS/public deployment requires a VPS and a real domain.",
   "backend_limitation": "Default redirect IP still belongs to the original operator; no proprietary API/VIP source or CA private key is included.",
   "railway_port_environment_tested": true,
-  "railway_healthcheck_tested_locally": true
+  "railway_healthcheck_tested_locally": true,
+  "safari_profile_download_tested_locally": true
 }

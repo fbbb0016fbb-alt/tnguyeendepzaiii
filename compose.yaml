@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     environment:
       DOH_TOKEN: ${DOH_TOKEN:?Run configure.py first}
+      PROFILE_HOST: ${DNS_HOST:?Run configure.py first}
     volumes:
       - ./config.json:/app/config.json:ro
     expose:

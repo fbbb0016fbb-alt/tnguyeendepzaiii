@@ -17,7 +17,8 @@ import urllib.request
 from unittest.mock import patch
 
 from configure import generate
-from dns_server import Gateway, Resolver, local_answer, make_query, parse_question, read_config, read_name
+from dns_server import (Gateway, Resolver, build_download_profile, local_answer, make_query,
+                        parse_question, profile_download_path, read_config, read_name)
 
 ROOT = Path(__file__).resolve().parent
 TOKEN = "integration-test-token-0123456789abcdef"
@@ -109,7 +110,7 @@ class HTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         config = read_config(ROOT / "config.json")
-        cls.server = Gateway(("127.0.0.1", 0), Resolver(config), TOKEN)
+        cls.server = Gateway(("127.0.0.1", 0), Resolver(config), TOKEN, profile_host="dns.example.com")
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = f"http://127.0.0.1:{cls.server.server_port}"
@@ -150,8 +151,73 @@ class HTTPTests(unittest.TestCase):
             urllib.request.urlopen(req, timeout=3)
         self.assertEqual(result.exception.code, 415)
 
+    def test_safari_profile_has_correct_headers_and_contents(self):
+        url = self.base + profile_download_path(TOKEN)
+        with urllib.request.urlopen(url, timeout=3) as response:
+            raw = response.read()
+            self.assertEqual(response.headers.get_content_type(), "application/x-apple-aspen-config")
+            self.assertIn('attachment; filename="dns-by-tnguyeendepzaii.mobileconfig"',
+                          response.headers["Content-Disposition"])
+            self.assertEqual(int(response.headers["Content-Length"]), len(raw))
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        profile = plistlib.loads(raw)
+        self.assertEqual(profile["PayloadDisplayName"], "DNS by tnguyeendepzaii")
+        self.assertEqual(profile["PayloadOrganization"], "TikTok: tnguyen2601_")
+        dns = next(x["DNSSettings"] for x in profile["PayloadContent"] if "DNSSettings" in x)
+        self.assertEqual(dns["ServerURL"], "https://dns.example.com/dns-query/" + TOKEN)
+        self.assertEqual(dns["SupplementalMatchDomains"], self.server.resolver.config["match_domains"])
+        original = plistlib.loads((ROOT / "reference/original-profile.xml").read_bytes())
+        ca = lambda p: next(x["PayloadContent"] for x in p["PayloadContent"]
+                            if x["PayloadType"] == "com.apple.security.root")
+        self.assertEqual(ca(profile), ca(original))
+
+    def test_profile_head_and_repeated_downloads(self):
+        url = self.base + profile_download_path(TOKEN)
+        with urllib.request.urlopen(url, timeout=3) as response:
+            first = response.read()
+        with urllib.request.urlopen(url, timeout=3) as response:
+            self.assertEqual(response.read(), first)
+        request = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(request, timeout=3) as response:
+            self.assertEqual(response.read(), b"")
+            self.assertEqual(int(response.headers["Content-Length"]), len(first))
+            self.assertEqual(response.headers.get_content_type(), "application/x-apple-aspen-config")
+
+    def test_profile_requires_download_link(self):
+        for path in ("/dns", "/dns/wrong.mobileconfig", "/dns/" + TOKEN + ".mobileconfig"):
+            with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as result:
+                urllib.request.urlopen(self.base + path, timeout=3)
+            self.assertEqual(result.exception.code, 404)
+
+    def test_request_host_cannot_change_dns_profile(self):
+        request = urllib.request.Request(self.base + profile_download_path(TOKEN),
+                                         headers={"Host": "attacker.example"})
+        with urllib.request.urlopen(request, timeout=3) as response:
+            profile = plistlib.loads(response.read())
+        dns = next(x["DNSSettings"] for x in profile["PayloadContent"] if "DNSSettings" in x)
+        self.assertTrue(dns["ServerURL"].startswith("https://dns.example.com/"))
+
+    def test_profile_without_hostname_is_unavailable(self):
+        server = Gateway(("127.0.0.1", 0), self.server.resolver, TOKEN, profile_host="")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}" + profile_download_path(TOKEN)
+            with self.assertRaises(urllib.error.HTTPError) as result:
+                urllib.request.urlopen(url, timeout=3)
+            self.assertEqual(result.exception.code, 503)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
 
 class ProfileTests(unittest.TestCase):
+    def test_download_hostname_cannot_inject_profile_url(self):
+        for host in ("https://evil.example", "dns.example.com/path", "a.example:443", "-bad.example"):
+            with self.subTest(host=host), self.assertRaises(ValueError):
+                build_download_profile(host, TOKEN, [], ROOT / "profile-template.plist")
+
     def test_default_profile_is_dns_only_and_preserves_scope(self):
         config = read_config(ROOT / "config.json")
         host, raw = generate("dns.example.com", TOKEN, config["match_domains"])

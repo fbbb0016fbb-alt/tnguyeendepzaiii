@@ -25,6 +25,16 @@ Giữ `.doh-token` trên máy Windows trùng với biến `DOH_TOKEN` trên Rail
 
 Tài liệu Railway: <https://docs.railway.com/networking/domains/working-with-domains> và <https://docs.railway.com/builds/dockerfiles>.
 
+## Tải hồ sơ trực tiếp bằng Safari trên iPhone
+
+Dịch vụ hỗ trợ link riêng dạng `https://TEN-MIEN/dns/MA-RIENG.mobileconfig`. Khi mở bằng Safari, máy chủ trả MIME `application/x-apple-aspen-config` và tên file `.mobileconfig`, để iOS nhận đây là hồ sơ cấu hình và hiển thị yêu cầu cho phép tải.
+
+Đường dẫn tải được suy ra từ token DNS; không tải `.mobileconfig` chứa token lên GitHub công khai. Hồ sơ được tạo trong bộ nhớ từ `profile-template.plist`, gắn token lúc chạy, giữ tên **DNS by tnguyeendepzaii**, dòng **TikTok: tnguyen2601_**, CA bên gốc và UUID của hồ sơ hiện có. File template trong repo không chứa token DNS thật.
+
+Máy chủ lấy tên miền từ `PROFILE_HOST`, rồi `RAILWAY_PUBLIC_DOMAIN`, hoặc `profile_host` trong `config.json`. Không lấy tên miền từ header Host do người truy cập gửi. Docker Compose đặt `PROFILE_HOST` theo `DNS_HOST` để chạy với VPS riêng.
+
+Sau khi tải, người dùng mở **Cài đặt → Hồ sơ đã tải về → Cài đặt**. Việc cho phép tải không tự cài hồ sơ hoặc bật tin cậy CA. Hồ sơ chưa ký vẫn hiển thị trạng thái chưa xác minh như bản file tải thủ công.
+
 ## Chạy thử ngay trên Windows
 
 Yêu cầu Python 3.11 trở lên. Không cần cài thư viện Python, Docker hoặc chứng chỉ vào hệ điều hành để thử tại máy.
