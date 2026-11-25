@@ -1,0 +1,40 @@
+services:
+  dns:
+    build: .
+    restart: unless-stopped
+    environment:
+      DOH_TOKEN: ${DOH_TOKEN:?Run configure.py first}
+    volumes:
+      - ./config.json:/app/config.json:ro
+    expose:
+      - "8053"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=8m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8053/health',timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DNS_HOST: ${DNS_HOST:?Run configure.py first}
+      DOH_TOKEN: ${DOH_TOKEN:?Run configure.py first}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      dns:
+        condition: service_healthy
+volumes:
+  caddy_data:
+  caddy_config:

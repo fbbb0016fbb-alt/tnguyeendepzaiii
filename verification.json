@@ -1,0 +1,28 @@
+{
+  "checked_at_utc": "2026-11-25T12:47:17.411158+00:00",
+  "unit_and_integration_tests": {
+    "passed": 17,
+    "failed": 0
+  },
+  "observed_domains": 68,
+  "redirect_rules": 28,
+  "block_rules": 23,
+  "forwarded_domains": 17,
+  "live_http_checks": [
+    "api.revenuecat.com -> 103.252.93.74",
+    "youtubei.googleapis.com -> 103.252.93.74",
+    "googleads.g.doubleclick.net -> 0.0.0.0",
+    "example.com -> live public upstream response"
+  ],
+  "profile_generator_checked": [
+    "DNS-only: 1 payload, 68 match domains",
+    "Original-CA option: 2 payloads, 68 match domains"
+  ],
+  "local_server_stopped": true,
+  "system_profiles_or_root_certificates_installed": false,
+  "docker_deployment_tested": false,
+  "docker_limitation": "Docker is not installed on this Windows machine. HTTPS/public deployment requires a VPS and a real domain.",
+  "backend_limitation": "Default redirect IP still belongs to the original operator; no proprietary API/VIP source or CA private key is included.",
+  "railway_port_environment_tested": true,
+  "railway_healthcheck_tested_locally": true
+}
